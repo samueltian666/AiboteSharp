@@ -18,7 +18,7 @@ public class Aibote
         _client = s;
         _aid = aid;
     }
-    public virtual void AddMisson(string fn,object[] ps)
+    public virtual void AddMisson(string fn,params object[] ps)
     {
         _MissonQueue.Enqueue(new MyMisson() {command=fn,data=ps });
     }
