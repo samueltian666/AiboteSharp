@@ -10,9 +10,8 @@ namespace AiboteSharp;
 
 public class Tcp
 {
-    public static TcpService service;
+    public TcpService service;
     public ConcurrentList<Aibote> ais = new();
-    Dictionary<string, string> aid_tid = new();
     const byte b = 47;
     public Tcp(string ip)
     {
@@ -46,33 +45,39 @@ public class Tcp
         if (n.Length == 16)
         {
             string aid = Encoding.UTF8.GetString(n);
-            var oai = ais.Where(x => x._aid == aid).FirstOrDefault();
+            var oai = ais.FirstOrDefault(x => x._aid == aid);
             if (oai != null)
             {
-                DestroyTask(oai._client.ID);
+                ForceDestroyTask(oai._client.ID);
             }
-            Task.Factory.StartNew(_ => {
+            Task.Factory.StartNew(() => {
                 Aibote ai = new(aid, client);
                 ais.Add(ai);
-                ai.StartScript();
+                ai.Start();
             }, TaskCreationOptions.LongRunning);
-            aid_tid[aid] = client.ID;
             Console.WriteLine($"{client.ID}--{aid} connected");
         }
         else
         {
-            Console.WriteLine($"已从{client.ID}接收到信息：{mes}");
+            Console.WriteLine($"新创建aibote线程处收到不该出现的消息{client.ID}接收到信息：{mes}");
         }
     }
-    public void DestroyTask(string tid)
+    public virtual void ForceDestroyTask(string aid)
     {
-        var oai = ais.Where(x => x._client.ID == tid).FirstOrDefault();
+        var oai = ais.FirstOrDefault(x => x._aid == aid);
         if (oai != null)
         {
-            oai.Stop();
+            oai.ForceDestroyTask();
             oai._client.Close();
             ais.Remove(oai);
-            aid_tid.Remove(oai._aid);
+        }
+    }
+    public virtual void MissonClear(string aid)
+    {
+        var oai = ais.FirstOrDefault(x => x._aid == aid);
+        if (oai != null)
+        {
+            oai.MissonClear();
         }
     }
 }

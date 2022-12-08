@@ -5,7 +5,6 @@ using System.Text;
 using System.Threading.Tasks;
 
 namespace AiboteSharp;
-
 public static class Helper
 {
     public static byte[] CombineWithParams(string functionName, params object[] ps)

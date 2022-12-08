@@ -13,6 +13,7 @@ public class Aibote
     public string _aid;
     public ConcurrentQueue<MyMisson> _MissonQueue = new();
     DateTime lastsendtime = DateTime.Now;
+    CancellationTokenSource cancelTokenSource = new ();
     public Aibote(string aid, SocketClient s)
     {
         _client = s;
@@ -22,9 +23,9 @@ public class Aibote
     {
         _MissonQueue.Enqueue(new MyMisson() {command=fn,data=ps });
     }
-    public virtual void StartScript()
+    public virtual void Start()
     {
-        while (true)
+        while (!cancelTokenSource.IsCancellationRequested)
         {
             if (_MissonQueue.IsEmpty)
             {
@@ -41,14 +42,17 @@ public class Aibote
                     string r = SendData(CombineWithParams(m.command, m.data));
                     Console.WriteLine(r);
                 }
-                Thread.Sleep(100);
             }
         }
-    }
-
-    public virtual void Stop()
-    {
         throw new TaskCanceledException();
+    }
+    public virtual void MissonClear()
+    {
+        _MissonQueue.Clear();
+    }
+    public virtual void ForceDestroyTask()
+    {
+        cancelTokenSource.Cancel();
     }
     /// <parm>保存的图片路径（手机）"/storage/emulated/0/Android/data/com.aibot.client/files/1.png</parm>
     /// <parm1>左上xy 右下xy 二值化算法类型 阈值 最大值 80, 150, 30, 30, 0, 127, 255 </parm1>
@@ -310,6 +314,26 @@ public class Aibote
     /// </summary>
     /// <parm1>102, "Aibote CheckBox", 10, 10, 300, 100</parm1>
     public bool createCheckBox(params object[] ps) => GetBool(SendData(CombineWithParams("createCheckBox", ps)));
+    /// <summary>
+    /// 创建WebView控件
+    /// </summary>
+    /// <parm1>103, "http://www.aibote.net", -1, -1, -1, -1</parm1>
+    public bool createWebView(params object[] ps) => GetBool(SendData(CombineWithParams("createWebView", ps)));
+    /// <summary>
+    /// 清除脚本控件
+    /// </summary>
+    public bool clearScriptControl(params object[] ps) => GetBool(SendData(CombineWithParams("clearScriptControl", ps)));
+    /// <summary>
+    /// 获取脚本配置参数
+    /// </summary>
+    /// <returns>{"100":"Aibote TextView"}</returns>
+    public string getScriptParam() => SendData(CombineWithParams("getScriptParam"));
+    /// <summary>
+    /// 执行多个手势
+    /// </summary>
+    /// <param1> 执行手势坐标位， 以"/"分割手势时长、横纵和坐标 "\n"分割坐标点。"\r\n"分割多个手势</param1>
+    public bool dispatchGestures(params object[] ps) => GetBool(SendData(CombineWithParams("dispatchGestures", ps)));
+
     string SendData(byte[] message)
     {
         try
