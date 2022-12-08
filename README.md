@@ -7,6 +7,9 @@ http://www.aibote.net/aiboteProtocol.html
 ###########v1.0.0  
 基本涵盖AndoridBot  
 ###########使用  
+###########nuget  
+https://www.nuget.org/packages/AiboteSharp/  
+直接nuget引用或者添加publish下的AiboteSharp.dll和TouchSocket.dll即可  
 Tcp tcp = new("0.0.0.0:5211");  
 while (true)  
 {  
