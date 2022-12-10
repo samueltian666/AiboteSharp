@@ -16,10 +16,10 @@ public class Tcp
     public Tcp(string ip)
     {
         service = new();
-        service.Setup(new TouchSocketConfig().SetListenIPHosts(new IPHost[] { new IPHost(ip) }).SetClearInterval(-1));
+        service.Setup(new TouchSocketConfig().SetListenIPHosts(new IPHost[] { new IPHost(ip) }).SetClearInterval(-1).SetBufferLength(1024 * 1024));
         service.Start();
         service.Connected+= connected;
-        service.Received += recive;
+        service.Received += receive;
         if (service.ServerState == ServerState.Running)
         {
             Console.WriteLine("tcp is running");
@@ -29,37 +29,38 @@ public class Tcp
     {
         client.SendAsync(Helper.CombineWithParams("getAndroidId"));
     }
-    public virtual void recive(SocketClient client,ByteBlock byteBlock ,IRequestInfo info)
+    public virtual void receive(SocketClient client,ByteBlock byteBlock ,IRequestInfo info)
     {
-        string mes = Encoding.UTF8.GetString(byteBlock.Buffer, 0, byteBlock.Len);
-        int index = 1;
         for (int i = 0; i < byteBlock.Buffer.Length; i++)
         {
-            if (byteBlock.Buffer[i] == b)
+            //const byte b = 47;
+            if (byteBlock.Buffer[i] == 47 && i > 1)
             {
-                index += i;
-                break;
+                byte[] n = byteBlock.Buffer.Skip(i + 1).Take(byteBlock.Len - (i + 1)).ToArray();
+                if (n.Length == 16)
+                {
+                    string aid = Encoding.UTF8.GetString(n);
+                    var oai = ais.FirstOrDefault(x => x._aid == aid);
+                    if (oai != null)
+                    {
+                        ForceDestroyTask(oai._aid);
+                    }
+                    Task.Factory.StartNew(_ => {
+                        Aibote ai = new(aid, client);
+                        ais.Add(ai);
+                        ai.Start();
+                    }, TaskCreationOptions.LongRunning);
+                    Console.WriteLine($"{client.ID}--{aid} connected");
+                }
+                return;
             }
-        }
-        byte[] n = byteBlock.Buffer.Skip(index).Take(byteBlock.Len - index).ToArray();
-        if (n.Length == 16)
-        {
-            string aid = Encoding.UTF8.GetString(n);
-            var oai = ais.FirstOrDefault(x => x._aid == aid);
-            if (oai != null)
+            if (byteBlock.Buffer[i] < 48 || byteBlock.Buffer[i] > 57)
             {
-                ForceDestroyTask(oai._client.ID);
+                var oai = ais.FirstOrDefault(x => x._client.ID == client.ID);
+                oai?.CombineByte(byteBlock.Buffer.Take(byteBlock.Len).ToArray());
+                return;
             }
-            Task.Factory.StartNew(() => {
-                Aibote ai = new(aid, client);
-                ais.Add(ai);
-                ai.Start();
-            }, TaskCreationOptions.LongRunning);
-            Console.WriteLine($"{client.ID}--{aid} connected");
-        }
-        else
-        {
-            Console.WriteLine($"新创建aibote线程处收到不该出现的消息{client.ID}接收到信息：{mes}");
+            if (i > 4) break;
         }
     }
     public virtual void ForceDestroyTask(string aid)
@@ -68,16 +69,12 @@ public class Tcp
         if (oai != null)
         {
             oai.ForceDestroyTask();
-            oai._client.Close();
             ais.Remove(oai);
         }
     }
     public virtual void MissonClear(string aid)
     {
         var oai = ais.FirstOrDefault(x => x._aid == aid);
-        if (oai != null)
-        {
-            oai.MissonClear();
-        }
+        oai?.MissonClear();
     }
 }

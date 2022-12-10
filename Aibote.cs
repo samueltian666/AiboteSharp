@@ -8,12 +8,14 @@ namespace AiboteSharp;
 
 public class Aibote
 {
-    const byte b = 47;
+    public readonly string _aid;
     public SocketClient _client;
-    public string _aid;
     public ConcurrentQueue<MyMisson> _MissonQueue = new();
-    DateTime lastsendtime = DateTime.Now;
-    CancellationTokenSource cancelTokenSource = new ();
+    private CancellationTokenSource cancelTokenSource = new();
+    private bool combineFile = false;
+    private List<byte> tempByte = new();
+    private int failedt = 0;
+    private DateTime lastsendtime = DateTime.Now;
     public Aibote(string aid, SocketClient s)
     {
         _client = s;
@@ -29,30 +31,99 @@ public class Aibote
         {
             if (_MissonQueue.IsEmpty)
             {
-                if ((DateTime.Now - lastsendtime).TotalSeconds > 29)
+                if ((DateTime.Now - lastsendtime).TotalSeconds > 28)
                 {
-                    _MissonQueue.Enqueue(new MyMisson() { command = "getAndroidId" });
+                    SendData(CombineWithParams("getAndroidId"));
                 }
             }
             _MissonQueue.TryDequeue(out var m);
             if (m != null)
             {
-                if (m.command != "getAndroidId")
+                if (m.command == "pushFile")
+                {
+                    var r = pushFile(m.data[0].ToString(), m.data[1].ToString());
+                    Console.WriteLine($"pushfile {r}");
+                }
+                else if (m.command == "pullFile")
+                {
+                    var r = pullFile(m.data[0].ToString(), m.data[1].ToString());
+                    Console.WriteLine($"pullFile {r}");
+                }
+                else
                 {
                     string r = SendData(CombineWithParams(m.command, m.data));
                     Console.WriteLine(r);
                 }
             }
+            Thread.Sleep(200);
         }
         throw new TaskCanceledException();
     }
     public virtual void MissonClear()
     {
+        _client.Close();
         _MissonQueue.Clear();
     }
     public virtual void ForceDestroyTask()
     {
         cancelTokenSource.Cancel();
+    }
+    public void CombineByte(byte[] m)
+    {
+        if (combineFile)
+        {
+            foreach (var v in m)
+            {
+                tempByte.Add(v);
+            }
+        }
+    }
+    byte[] sendDataReturnBytes(byte[] message)
+    {
+        try
+        {
+            combineFile = true;
+            byte[] returnData = _client.GetWaitingClient().SendThenReturn(message);
+            int index = 1;
+            for (int i = 1; i < returnData.Length; i++)
+            {
+                if (returnData[i] == 47)
+                {
+                    index += i;
+                    break;
+                }
+                if (i > 4)
+                    break;
+            }
+            byte[] n = returnData.Skip(index).ToArray();
+            CombineByte(n);
+            lastsendtime = DateTime.Now;
+            failedt = 0;
+            Thread.Sleep(5000);
+            return tempByte.ToArray();
+        }
+        catch (Exception e)
+        {
+            if (e.GetType() == typeof(NotConnectedException))
+            {
+                Console.WriteLine($"NotConnectedException   {message}");
+            }
+            else if (e.Message.Contains("timed out"))
+            {
+                Console.WriteLine($"{DateTime.Now}timed out   {message}");
+                failedt += 1;
+                if (failedt > 2)
+                {
+                    Console.WriteLine("failedt > 2 ForceDestroyTask");
+                    ForceDestroyTask();
+                }
+            }
+            else
+            {
+                Console.WriteLine(e);
+            }
+        }
+        return new byte[] { };
     }
     /// <parm>保存的图片路径（手机）"/storage/emulated/0/Android/data/com.aibot.client/files/1.png</parm>
     /// <parm1>左上xy 右下xy 二值化算法类型 阈值 最大值 80, 150, 30, 30, 0, 127, 255 </parm1>
@@ -200,31 +271,55 @@ public class Aibote
     /// <summary>
     /// 上传文件
     /// </summary>
-    public bool pushFile(string path, string file)
+    public bool pushFile(string phonePath, string fileName)
     {
-        if (!File.Exists(file))
+        string filepath = $@"./files/{fileName}";
+        if (!File.Exists(filepath))
         {
             return false;
         }
-        byte[] data = File.ReadAllBytes(file);
-        return GetBool(SendData(CombineWithParams("pushFile", path, Encoding.UTF8.GetString(data))));
+        byte[] data = File.ReadAllBytes(filepath);
+        List<byte> bytes = new List<byte>();
+        StringBuilder sb = new();
+        sb.Append(Encoding.UTF8.GetBytes("pushFile").Length);
+        sb.Append('/');
+        sb.Append(Encoding.UTF8.GetBytes(phonePath).Length);
+        sb.Append('/');
+        sb.Append(data.Length);
+        sb.Append('\n');
+        sb.Append("pushFile");
+        sb.Append(phonePath);
+        bytes.AddRange(Encoding.UTF8.GetBytes(sb.ToString()));
+        bytes.AddRange(data);
+        return GetBool(SendData(bytes.ToArray()));
     }
     /// <summary>
     /// 拉取文件
     /// </summary>
-    public bool pullFile(string phonePath, string savePath)
+    public bool pullFile(string phonePath, string savename)
     {
-        string r = SendData(CombineWithParams("pullFile", phonePath));
-        if (r.Length == 0)
+        string savePath = $@"./files/{savename}";
+        byte[] data = sendDataReturnBytes(CombineWithParams("pullFile", phonePath));
+        //string r = SendData();
+        if (data.Length == 0 || data.Length == 4)
         {
             return false;
         }
-        byte[] data = Encoding.UTF8.GetBytes(r);
-        FileStream fs = new FileStream(savePath, FileMode.Create);
+        //byte[] data = Encoding.UTF8.GetBytes(r);
+        FileStream fs = new(savePath, FileMode.Create);
         fs.Write(data, 0, data.Length);
         fs.Dispose();
+        tempByte.Clear();
         return File.Exists(savePath);
     }
+    /// <summary>
+    /// 写入安卓文件
+    /// </summary>
+    public bool writeAndroidFile(string phonePath, string content, bool b = false) => GetBool(SendData(CombineWithParams("writeAndroidFile", phonePath, content, b)));
+    /// <summary>
+    /// 读取安卓文件
+    /// </summary>
+    public string readAndroidFile(string phonePath) => SendData(CombineWithParams("readAndroidFile", phonePath));
     /// <summary>
     /// 跳转uri
     /// </summary>
@@ -340,31 +435,41 @@ public class Aibote
         {
             byte[] returnData = _client.GetWaitingClient().SendThenReturn(message);
             int index = 1;
-            for (int i = 0; i < returnData.Length; i++)
+            for (int i = 1; i < returnData.Length; i++)
             {
-                if (returnData[i] == b)
+                if (returnData[i] == 47)
                 {
                     index += i;
                     break;
                 }
+                if (i > 4)
+                    break;
             }
             byte[] n = returnData.Skip(index).ToArray();
             lastsendtime = DateTime.Now;
+            failedt = 0;
+            combineFile = false;
             return Encoding.UTF8.GetString(n); ;
         }
         catch (Exception e)
         {
             if (e.GetType() == typeof(NotConnectedException))
             {
-                Console.WriteLine($"{DateTime.Now}--{_aid} NotConnectedException {e.Message}");
+                Console.WriteLine($"NotConnectedException   {message}");
             }
             else if (e.Message.Contains("timed out"))
             {
-                Console.WriteLine($"{DateTime.Now}--{_aid}timed out {e.Message}");
+                Console.WriteLine($"{DateTime.Now}timed out   {message}");
+                failedt += 1;
+                if (failedt > 2)
+                {
+                    Console.WriteLine("failedt > 2 ForceDestroyTask");
+                    ForceDestroyTask();
+                }
             }
             else
             {
-                Console.WriteLine(e.Message);
+                Console.WriteLine(e);
             }
         }
         return string.Empty;
