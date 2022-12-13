@@ -12,24 +12,24 @@ public class Tcp
 {
     public TcpService service;
     public ConcurrentList<Aibote> ais = new();
-    const byte b = 47;
-    public Tcp(string ip)
+    public Tcp(string ip, string servername = "111")
     {
         service = new();
-        service.Setup(new TouchSocketConfig().SetListenIPHosts(new IPHost[] { new IPHost(ip) }).SetClearInterval(-1).SetBufferLength(1024 * 1024));
+        service.Setup(new TouchSocketConfig()
+            .SetListenIPHosts(new IPHost[] { new IPHost(ip) })
+            .SetClearInterval(-1)
+            .SetBufferLength(1024 * 1024)
+            .SetServerName(servername));
+        service.Connected += connected;
+        service.Received += received;
         service.Start();
-        service.Connected+= connected;
-        service.Received += receive;
         if (service.ServerState == ServerState.Running)
         {
             Console.WriteLine("tcp is running");
         }
     }
-    public virtual void connected(SocketClient client,TouchSocketEventArgs e)
-    {
-        client.SendAsync(Helper.CombineWithParams("getAndroidId"));
-    }
-    public virtual void receive(SocketClient client,ByteBlock byteBlock ,IRequestInfo info)
+    protected virtual void connected(SocketClient client, TouchSocketEventArgs e) => client.SendAsync(Helper.CombineWithParams("getAndroidId"));
+    protected virtual void received(SocketClient client, ByteBlock byteBlock, IRequestInfo info)
     {
         for (int i = 0; i < byteBlock.Buffer.Length; i++)
         {
@@ -45,11 +45,7 @@ public class Tcp
                     {
                         ForceDestroyTask(oai._aid);
                     }
-                    Task.Factory.StartNew(_ => {
-                        Aibote ai = new(aid, client);
-                        ais.Add(ai);
-                        ai.Start();
-                    }, TaskCreationOptions.LongRunning);
+                    NewTask(client, aid);
                     Console.WriteLine($"{client.ID}--{aid} connected");
                 }
                 return;
@@ -62,6 +58,15 @@ public class Tcp
             }
             if (i > 4) break;
         }
+    }
+    protected virtual void NewTask(SocketClient client, string aid)
+    {
+        Task.Factory.StartNew(_ =>
+        {
+            Aibote ai = new(aid, client);
+            ais.Add(ai);
+            ai.Start();
+        }, TaskCreationOptions.LongRunning);
     }
     public virtual void ForceDestroyTask(string aid)
     {

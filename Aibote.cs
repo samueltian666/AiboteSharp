@@ -21,9 +21,45 @@ public class Aibote
         _client = s;
         _aid = aid;
     }
-    public virtual void AddMisson(string fn,params object[] ps)
+    public virtual void AddMisson(string fn, params object[] ps) => _MissonQueue.Enqueue(new MyMisson() { command = fn, data = ps });
+    protected virtual void DealWithException(Exception e)
     {
-        _MissonQueue.Enqueue(new MyMisson() {command=fn,data=ps });
+        if (e.GetType() == typeof(NotConnectedException))
+        {
+            Console.WriteLine($"NotConnectedException   {e.Message}");
+        }
+        else if (e.Message.Contains("timed out"))
+        {
+            Console.WriteLine($"{DateTime.Now}timed out   {e.Message}");
+            failedt += 1;
+            if (failedt > 2)
+            {
+                Console.WriteLine("failedt > 2 ForceDestroyTask");
+                ForceDestroyTask();
+            }
+        }
+        else
+        {
+            Console.WriteLine(e.Message);
+        }
+    }
+    protected virtual void DealWithMission(MyMisson m)
+    {
+        if (m.command == "pushFile")
+        {
+            bool r = pushFile(m.data[0].ToString(), m.data[1].ToString());
+            Console.WriteLine($"pushfile {r}");
+        }
+        else if (m.command == "pullFile")
+        {
+            bool r = pullFile(m.data[0].ToString(), m.data[1].ToString());
+            Console.WriteLine($"pullFile {r}");
+        }
+        else
+        {
+            string r = SendData(CombineWithParams(m.command, m.data));
+            Console.WriteLine(r);
+        }
     }
     public virtual void Start()
     {
@@ -39,21 +75,7 @@ public class Aibote
             _MissonQueue.TryDequeue(out var m);
             if (m != null)
             {
-                if (m.command == "pushFile")
-                {
-                    var r = pushFile(m.data[0].ToString(), m.data[1].ToString());
-                    Console.WriteLine($"pushfile {r}");
-                }
-                else if (m.command == "pullFile")
-                {
-                    var r = pullFile(m.data[0].ToString(), m.data[1].ToString());
-                    Console.WriteLine($"pullFile {r}");
-                }
-                else
-                {
-                    string r = SendData(CombineWithParams(m.command, m.data));
-                    Console.WriteLine(r);
-                }
+                DealWithMission(m);
             }
             Thread.Sleep(200);
         }
@@ -61,12 +83,12 @@ public class Aibote
     }
     public virtual void MissonClear()
     {
-        _client.Close();
         _MissonQueue.Clear();
     }
     public virtual void ForceDestroyTask()
     {
         cancelTokenSource.Cancel();
+        _client.Close();
     }
     public void CombineByte(byte[] m)
     {
@@ -78,7 +100,7 @@ public class Aibote
             }
         }
     }
-    byte[] sendDataReturnBytes(byte[] message)
+    private byte[] sendDataReturnBytes(byte[] message)
     {
         try
         {
@@ -95,8 +117,7 @@ public class Aibote
                 if (i > 4)
                     break;
             }
-            byte[] n = returnData.Skip(index).ToArray();
-            CombineByte(n);
+            CombineByte(returnData.Skip(index).ToArray());
             lastsendtime = DateTime.Now;
             failedt = 0;
             Thread.Sleep(5000);
@@ -104,26 +125,9 @@ public class Aibote
         }
         catch (Exception e)
         {
-            if (e.GetType() == typeof(NotConnectedException))
-            {
-                Console.WriteLine($"NotConnectedException   {message}");
-            }
-            else if (e.Message.Contains("timed out"))
-            {
-                Console.WriteLine($"{DateTime.Now}timed out   {message}");
-                failedt += 1;
-                if (failedt > 2)
-                {
-                    Console.WriteLine("failedt > 2 ForceDestroyTask");
-                    ForceDestroyTask();
-                }
-            }
-            else
-            {
-                Console.WriteLine(e);
-            }
+            DealWithException(e);
         }
-        return new byte[] { };
+        return Array.Empty<byte>();
     }
     /// <parm>保存的图片路径（手机）"/storage/emulated/0/Android/data/com.aibot.client/files/1.png</parm>
     /// <parm1>左上xy 右下xy 二值化算法类型 阈值 最大值 80, 150, 30, 30, 0, 127, 255 </parm1>
@@ -279,7 +283,7 @@ public class Aibote
             return false;
         }
         byte[] data = File.ReadAllBytes(filepath);
-        List<byte> bytes = new List<byte>();
+        List<byte> bytes = new();
         StringBuilder sb = new();
         sb.Append(Encoding.UTF8.GetBytes("pushFile").Length);
         sb.Append('/');
@@ -300,12 +304,10 @@ public class Aibote
     {
         string savePath = $@"./files/{savename}";
         byte[] data = sendDataReturnBytes(CombineWithParams("pullFile", phonePath));
-        //string r = SendData();
         if (data.Length == 0 || data.Length == 4)
         {
             return false;
         }
-        //byte[] data = Encoding.UTF8.GetBytes(r);
         FileStream fs = new(savePath, FileMode.Create);
         fs.Write(data, 0, data.Length);
         fs.Dispose();
@@ -428,8 +430,7 @@ public class Aibote
     /// </summary>
     /// <param1> 执行手势坐标位， 以"/"分割手势时长、横纵和坐标 "\n"分割坐标点。"\r\n"分割多个手势</param1>
     public bool dispatchGestures(params object[] ps) => GetBool(SendData(CombineWithParams("dispatchGestures", ps)));
-
-    string SendData(byte[] message)
+    private string SendData(byte[] message)
     {
         try
         {
@@ -453,24 +454,7 @@ public class Aibote
         }
         catch (Exception e)
         {
-            if (e.GetType() == typeof(NotConnectedException))
-            {
-                Console.WriteLine($"NotConnectedException   {message}");
-            }
-            else if (e.Message.Contains("timed out"))
-            {
-                Console.WriteLine($"{DateTime.Now}timed out   {message}");
-                failedt += 1;
-                if (failedt > 2)
-                {
-                    Console.WriteLine("failedt > 2 ForceDestroyTask");
-                    ForceDestroyTask();
-                }
-            }
-            else
-            {
-                Console.WriteLine(e);
-            }
+            DealWithException(e);
         }
         return string.Empty;
     }
