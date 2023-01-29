@@ -1,9 +1,6 @@
 ﻿using System.Net.Sockets;
 using System.Text;
 using TouchSocket.Core;
-using TouchSocket.Core.ByteManager;
-using TouchSocket.Core.Collections.Concurrent;
-using TouchSocket.Core.Config;
 using TouchSocket.Sockets;
 
 namespace AiboteSharp;
@@ -17,8 +14,7 @@ public class Tcp
         service = new();
         service.Setup(new TouchSocketConfig()
             .SetListenIPHosts(new IPHost[] { new IPHost(ip) })
-            .SetClearInterval(-1)
-            .SetBufferLength(1024 * 1024)
+            .SetBufferLength(1024 * 1024*10)
             .SetServerName(servername));
         service.Connected += connected;
         service.Received += received;

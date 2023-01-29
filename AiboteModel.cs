@@ -7,8 +7,8 @@ public sealed class MyMisson
 }
 public sealed class Point
 {
-    public double x;
-    public double y;
+    public int x;
+    public int y;
 }
 public sealed class OCRResult
 {
